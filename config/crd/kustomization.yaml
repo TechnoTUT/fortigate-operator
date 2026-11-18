@@ -1,0 +1,4 @@
+resources:
+  - fortigate.technotut.net_firewallpolicies.yaml
+  - fortigate.technotut.net_firewalladdresses.yaml
+  - fortigate.technotut.net_firewallservices.yaml

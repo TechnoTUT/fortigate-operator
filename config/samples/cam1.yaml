@@ -1,0 +1,37 @@
+# Lets the camera VLAN reach a Service in the cluster over RTMP.
+# The policy refers to the address and the service by their FortiGate names,
+# so objects defined here and objects created by hand can be mixed.
+apiVersion: fortigate.technotut.net/v1alpha1
+kind: FirewallAddress
+metadata:
+  name: cam1-rtmp
+  namespace: cam1
+spec:
+  subnet: 10.12.1.10/32
+  comment: RTMP ingest for cam1
+---
+apiVersion: fortigate.technotut.net/v1alpha1
+kind: FirewallService
+metadata:
+  name: rtmp-alt
+  namespace: cam1
+spec:
+  name: RTMP-ALT
+  tcpPortrange: ["1936"]
+---
+apiVersion: fortigate.technotut.net/v1alpha1
+kind: FirewallPolicy
+metadata:
+  name: al-cam1-rtmp
+  namespace: cam1
+spec:
+  srcintf: [VLAN44]
+  dstintf: [dmz]
+  srcaddr: [VLAN44 address]
+  dstaddr: [cam1-rtmp]
+  service: [RTMP, RTMP-ALT]
+  action: accept
+  comments: cam1 to its RTMP server
+  # Keep it above an existing deny policy. Without position, a new policy is added at the end.
+  # position:
+  #   before: deny-cam1

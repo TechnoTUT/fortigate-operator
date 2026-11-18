@@ -1,0 +1,17 @@
+# Everything needed to run the controller: CRDs, RBAC and the Deployment.
+# The API key is not included. Create it before deploying:
+#   kubectl -n fortigate-operator create secret generic fortigate-operator --from-literal=token=<API key>
+#
+# Use it from another kustomization and patch the environment, for example:
+#   resources:
+#     - https://github.com/TechnoTUT/fortigate-operator//config/default?ref=v0.1.0
+#   patches:
+#     - target: { kind: Deployment, name: fortigate-operator }
+#       patch: |
+#         - op: replace
+#           path: /spec/template/spec/containers/0/env/2/value
+#           value: "false"   # DRY_RUN
+resources:
+  - ../crd
+  - ../rbac
+  - ../manager
