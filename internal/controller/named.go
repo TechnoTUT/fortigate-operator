@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -27,9 +28,18 @@ type namedKind[T client.Object] struct {
 	common       func(T) v1alpha1.CommonSpec
 	status       func(T) *v1alpha1.ObjectStatus
 	comment      func(T) string
-	// desired returns the fields to write, without name and comment.
-	desired func(T) (fortigate.Object, error)
+	// desired returns the fields to write, without name and comment. It may read other
+	// Kubernetes objects through c. A *referenceError means one of them is missing or not ready.
+	desired func(ctx context.Context, c client.Reader, obj T) (fortigate.Object, error)
+	// setup, when set, adds watches to the controller builder.
+	setup func(mgr ctrl.Manager, b *builder.Builder) error
 }
+
+// referenceError reports that a Kubernetes object the spec refers to is missing or not ready.
+// The FortiGate object is left as it is until the reference resolves.
+type referenceError struct{ msg string }
+
+func (e *referenceError) Error() string { return e.msg }
 
 // NamedReconciler reconciles a name-keyed kind.
 type NamedReconciler[T client.Object] struct {
@@ -40,10 +50,15 @@ type NamedReconciler[T client.Object] struct {
 
 // SetupWithManager registers the reconciler.
 func (r *NamedReconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(r.k.newObject(), builder.WithPredicates(specChanged())).
-		Named(strings.ToLower(r.k.kind)).
-		Complete(r)
+		Named(strings.ToLower(r.k.kind))
+	if r.k.setup != nil {
+		if err := r.k.setup(mgr, b); err != nil {
+			return err
+		}
+	}
+	return b.Complete(r)
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -91,7 +106,12 @@ func (r *NamedReconciler[T]) sync(ctx context.Context, obj T, name string) error
 		ready(metav1.ConditionFalse, v1alpha1.ReasonInvalid, fmt.Sprintf("name %q is longer than %d characters", name, r.k.maxNameLen))
 		return nil
 	}
-	want, err := r.k.desired(obj)
+	want, err := r.k.desired(ctx, r.Client, obj)
+	var refErr *referenceError
+	if errors.As(err, &refErr) {
+		ready(metav1.ConditionFalse, v1alpha1.ReasonNotFound, err.Error())
+		return nil
+	}
 	if err != nil {
 		ready(metav1.ConditionFalse, v1alpha1.ReasonInvalid, err.Error())
 		return nil

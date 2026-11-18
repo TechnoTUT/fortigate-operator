@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,7 +27,11 @@ func newClient(t *testing.T, objs ...client.Object) client.Client {
 	if err := v1alpha1.AddToScheme(s); err != nil {
 		t.Fatal(err)
 	}
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatal(err)
+	}
 	return fake.NewClientBuilder().WithScheme(s).
+		WithIndex(&v1alpha1.FirewallAddress{}, serviceRefIndex, serviceRefKey).
 		WithStatusSubresource(&v1alpha1.FirewallPolicy{}, &v1alpha1.FirewallAddress{}, &v1alpha1.FirewallService{}).
 		WithObjects(objs...).Build()
 }
@@ -179,6 +184,107 @@ func TestAddressInvalidSubnet(t *testing.T) {
 	_ = c.Get(context.Background(), types.NamespacedName{Namespace: "cam1", Name: "bad"}, &got)
 	cond := readyOf(t, got.Status.Conditions)
 	if cond.Reason != v1alpha1.ReasonInvalid || !strings.Contains(cond.Message, "10.12.0.0/16") {
+		t.Errorf("Ready = %+v", cond)
+	}
+	if w := fg.takeWrites(); len(w) != 0 {
+		t.Errorf("writes = %v", w)
+	}
+}
+
+func lbService(name, typ string, ips ...string) *corev1.Service {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "cam1", Name: name},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceType(typ)},
+	}
+	for _, ip := range ips {
+		svc.Status.LoadBalancer.Ingress = append(svc.Status.LoadBalancer.Ingress, corev1.LoadBalancerIngress{IP: ip})
+	}
+	return svc
+}
+
+func serviceRefAddress(name, svc string) *v1alpha1.FirewallAddress {
+	return &v1alpha1.FirewallAddress{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "cam1", Name: name},
+		Spec:       v1alpha1.FirewallAddressSpec{Type: "ipmask", ServiceRef: &v1alpha1.ServiceReference{Name: svc}},
+	}
+}
+
+func TestAddressServiceRef(t *testing.T) {
+	ctx := context.Background()
+	fg := newFakeFG()
+	svc := lbService("cam1-nginx-service", "LoadBalancer")
+	c := newClient(t, serviceRefAddress("cam1-nginx", "cam1-nginx-service"), svc)
+	r := NewAddressReconciler(c, opts(fg))
+	key := types.NamespacedName{Namespace: "cam1", Name: "cam1-nginx"}
+	readyNow := func() (metav1.Condition, v1alpha1.FirewallAddress) {
+		t.Helper()
+		var a v1alpha1.FirewallAddress
+		if err := c.Get(ctx, key, &a); err != nil {
+			t.Fatal(err)
+		}
+		return readyOf(t, a.Status.Conditions), a
+	}
+
+	// No load balancer address yet: nothing is created.
+	reconcileOnce(t, r, "cam1", "cam1-nginx")
+	if cond, _ := readyNow(); cond.Reason != v1alpha1.ReasonNotFound || !strings.Contains(cond.Message, "no IPv4") {
+		t.Errorf("Ready = %+v", cond)
+	}
+	if fg.get("firewall/address", "cam1-nginx") != nil {
+		t.Error("created an address without an IP")
+	}
+
+	// The address is assigned: a /32 is created. IPv6 addresses are ignored.
+	svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: "fd00::1"}, {IP: "10.12.77.252"}}
+	if err := c.Status().Update(ctx, svc); err != nil {
+		t.Fatal(err)
+	}
+	if reqs := addressesForService(c)(ctx, svc); len(reqs) != 1 || reqs[0].NamespacedName != key {
+		t.Fatalf("Service maps to %v", reqs)
+	}
+	reconcileOnce(t, r, "cam1", "cam1-nginx")
+	if got := fg.get("firewall/address", "cam1-nginx"); got["subnet"] != "10.12.77.252 255.255.255.255" {
+		t.Errorf("created %v", got)
+	}
+	if cond, a := readyNow(); cond.Status != metav1.ConditionTrue || a.Status.Address != "10.12.77.252/32" {
+		t.Errorf("Ready = %+v, address = %q", cond, a.Status.Address)
+	}
+
+	// The address moves: the FortiGate object follows, in place.
+	svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: "10.12.77.200"}}
+	if err := c.Status().Update(ctx, svc); err != nil {
+		t.Fatal(err)
+	}
+	fg.takeWrites()
+	reconcileOnce(t, r, "cam1", "cam1-nginx")
+	if got := fg.get("firewall/address", "cam1-nginx"); got["subnet"] != "10.12.77.200 255.255.255.255" {
+		t.Errorf("did not follow: %v", got["subnet"])
+	}
+	if w := fg.takeWrites(); len(w) != 1 {
+		t.Errorf("writes = %v", w)
+	}
+
+	// The Service goes away: the FortiGate object is left as it is and the resource reports it.
+	if err := c.Delete(ctx, svc); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r, "cam1", "cam1-nginx")
+	if cond, _ := readyNow(); cond.Reason != v1alpha1.ReasonNotFound {
+		t.Errorf("Ready = %+v", cond)
+	}
+	if w := fg.takeWrites(); len(w) != 0 {
+		t.Errorf("writes = %v", w)
+	}
+}
+
+func TestAddressServiceRefNotLoadBalancer(t *testing.T) {
+	fg := newFakeFG()
+	c := newClient(t, serviceRefAddress("dns", "coredns"), lbService("coredns", "ClusterIP"))
+	r := NewAddressReconciler(c, opts(fg))
+	reconcileOnce(t, r, "cam1", "dns")
+	var a v1alpha1.FirewallAddress
+	_ = c.Get(context.Background(), types.NamespacedName{Namespace: "cam1", Name: "dns"}, &a)
+	if cond := readyOf(t, a.Status.Conditions); cond.Reason != v1alpha1.ReasonNotFound || !strings.Contains(cond.Message, "ClusterIP") {
 		t.Errorf("Ready = %+v", cond)
 	}
 	if w := fg.takeWrites(); len(w) != 0 {

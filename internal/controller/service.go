@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -29,7 +30,7 @@ func NewServiceReconciler(c client.Client, o Options) *NamedReconciler[*v1alpha1
 // dst[-dst][:src[-src]]
 var portRangeRE = regexp.MustCompile(`^\d{1,5}(-\d{1,5})?(:\d{1,5}(-\d{1,5})?)?$`)
 
-func serviceFields(o *v1alpha1.FirewallService) (fortigate.Object, error) {
+func serviceFields(_ context.Context, _ client.Reader, o *v1alpha1.FirewallService) (fortigate.Object, error) {
 	s := o.Spec
 	if len(s.TCPPortrange)+len(s.UDPPortrange)+len(s.SCTPPortrange) == 0 {
 		return nil, fmt.Errorf("set at least one of tcpPortrange, udpPortrange or sctpPortrange")

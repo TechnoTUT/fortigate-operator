@@ -25,6 +25,13 @@ spec:
     - jsonPath: .spec.type
       name: Type
       type: string
+    - jsonPath: .spec.serviceRef.name
+      name: Service
+      priority: 1
+      type: string
+    - jsonPath: .status.address
+      name: Address
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
@@ -92,6 +99,19 @@ spec:
                 x-kubernetes-validations:
                 - message: name is immutable
                   rule: self == oldSelf
+              serviceRef:
+                description: |-
+                  ServiceRef takes the address from a Service of type LoadBalancer in the same namespace.
+                  The address object holds the Service's IPv4 load balancer address as a /32 and follows it
+                  when it changes. Used with type ipmask, instead of subnet.
+                properties:
+                  name:
+                    description: Name of the Service.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               startIP:
                 description: First address of the range. Used with type iprange.
                 type: string
@@ -108,15 +128,21 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: subnet is required for type ipmask
-              rule: self.type != 'ipmask' || has(self.subnet)
+            - message: set exactly one of subnet or serviceRef for type ipmask
+              rule: self.type != 'ipmask' || (has(self.subnet) != has(self.serviceRef))
+            - message: serviceRef can only be used with type ipmask
+              rule: '!has(self.serviceRef) || self.type == ''ipmask'''
             - message: startIP and endIP are required for type iprange
               rule: self.type != 'iprange' || (has(self.startIP) && has(self.endIP))
             - message: fqdn is required for type fqdn
               rule: self.type != 'fqdn' || has(self.fqdn)
           status:
-            description: ObjectStatus is the status shared by every kind.
+            description: FirewallAddressStatus is the observed state of a FirewallAddress.
             properties:
+              address:
+                description: Address is the subnet last resolved from spec.subnet
+                  or spec.serviceRef, in CIDR notation.
+                type: string
               conditions:
                 description: Conditions. The Ready condition is true when the FortiGate
                   object matches the spec.

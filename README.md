@@ -11,7 +11,7 @@ All kinds are namespaced and belong to `fortigate.technotut.net/v1alpha1`. Field
 | Kind | FortiGate table | Short name |
 |---|---|---|
 | `FirewallPolicy` | `config firewall policy` | `fgpol` |
-| `FirewallAddress` | `config firewall address` (ipmask, iprange, fqdn) | `fgaddr` |
+| `FirewallAddress` | `config firewall address` (ipmask, iprange, fqdn, or the address of a Service) | `fgaddr` |
 | `FirewallService` | `config firewall service custom` (TCP, UDP, SCTP) | `fgsvc` |
 
 ```yaml
@@ -43,6 +43,27 @@ spec:
   position:
     before: deny-cam1 # optional
 ```
+
+### Addresses from a Service
+
+`spec.serviceRef` takes the address from a Service of type `LoadBalancer` in the same namespace, instead of `spec.subnet`. The address object holds the Service's IPv4 load balancer address (`status.loadBalancer.ingress`) as a `/32`, so a policy opens the firewall to that application only, not to every Service in the cluster.
+
+```yaml
+apiVersion: fortigate.technotut.net/v1alpha1
+kind: FirewallAddress
+metadata:
+  name: cam1-nginx
+  namespace: cam1
+spec:
+  serviceRef:
+    name: cam1-nginx-service
+```
+
+- The controller watches the Service. When its load balancer address changes, the FortiGate address is updated in place. Policies refer to the address by name and are not rewritten.
+- Until the Service has an IPv4 load balancer address, or when it is not of type `LoadBalancer`, the resource reports `ReferenceNotFound` and nothing is created.
+- When the Service is deleted, the FortiGate address keeps the last address and the resource reports `ReferenceNotFound`. Delete the `FirewallAddress` together with the Service, so that the address is not reused by another Service while a policy still allows it.
+- A Service with more than one IPv4 load balancer address is reported as `InvalidSpec`. IPv6 addresses are ignored.
+- `status.address` (the `Address` column of `kubectl get fgaddr`) shows the address that was written.
 
 A policy refers to interfaces, addresses and services by their FortiGate names. Objects created by this controller and objects created by hand can be mixed. More examples are in [config/samples](config/samples).
 
