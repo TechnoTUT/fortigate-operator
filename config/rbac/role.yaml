@@ -5,6 +5,14 @@ metadata:
   name: fortigate-operator
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - fortigate.technotut.net
   resources:
   - firewalladdresses

@@ -1,13 +1,19 @@
 # Lets the camera VLAN reach a Service in the cluster over RTMP.
 # The policy refers to the address and the service by their FortiGate names,
 # so objects defined here and objects created by hand can be mixed.
+#
+# The address follows the load balancer IP of the Service cam1-nginx-service in the
+# same namespace, so the policy opens only that Service. A fixed address works too:
+#   spec:
+#     subnet: 10.12.1.10/32
 apiVersion: fortigate.technotut.net/v1alpha1
 kind: FirewallAddress
 metadata:
   name: cam1-rtmp
   namespace: cam1
 spec:
-  subnet: 10.12.1.10/32
+  serviceRef:
+    name: cam1-nginx-service
   comment: RTMP ingest for cam1
 ---
 apiVersion: fortigate.technotut.net/v1alpha1
