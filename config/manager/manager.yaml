@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fortigate-operator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fortigate-operator
+  namespace: fortigate-operator
+  labels:
+    app.kubernetes.io/name: fortigate-operator
+spec:
+  replicas: 1
+  # Only one instance may write to the FortiGate at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fortigate-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fortigate-operator
+    spec:
+      serviceAccountName: fortigate-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: ghcr.io/technotut/fortigate-operator:main
+          imagePullPolicy: Always
+          env:
+            # Edit these with a kustomize patch (see config/default/kustomization.yaml).
+            - { name: FORTIGATE_URL, value: "https://192.168.99.129" }
+            - { name: FORTIGATE_INSECURE_SKIP_VERIFY, value: "true" }
+            - { name: DRY_RUN, value: "true" }
+            - name: FORTIGATE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fortigate-operator
+                  key: token
+          ports:
+            - { name: metrics, containerPort: 8080 }
+            - { name: health, containerPort: 8081 }
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+          readinessProbe:
+            httpGet: { path: /readyz, port: health }
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }

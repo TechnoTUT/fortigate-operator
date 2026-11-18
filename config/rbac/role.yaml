@@ -1,0 +1,36 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fortigate-operator
+rules:
+- apiGroups:
+  - fortigate.technotut.net
+  resources:
+  - firewalladdresses
+  - firewallpolicies
+  - firewallservices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - fortigate.technotut.net
+  resources:
+  - firewalladdresses/finalizers
+  - firewallpolicies/finalizers
+  - firewallservices/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - fortigate.technotut.net
+  resources:
+  - firewalladdresses/status
+  - firewallpolicies/status
+  - firewallservices/status
+  verbs:
+  - get
+  - patch
+  - update

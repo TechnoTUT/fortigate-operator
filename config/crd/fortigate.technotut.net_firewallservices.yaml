@@ -1,0 +1,189 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: firewallservices.fortigate.technotut.net
+spec:
+  group: fortigate.technotut.net
+  names:
+    categories:
+    - fortigate
+    kind: FirewallService
+    listKind: FirewallServiceList
+    plural: firewallservices
+    shortNames:
+    - fgsvc
+    singular: firewallservice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.name
+      name: FortiGate name
+      type: string
+    - jsonPath: .spec.tcpPortrange
+      name: TCP
+      type: string
+    - jsonPath: .spec.udpPortrange
+      name: UDP
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: FirewallService is a FortiGate custom service.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: FirewallServiceSpec is a custom service (config firewall
+              service custom) for TCP, UDP or SCTP.
+            properties:
+              category:
+                description: Service category shown in the GUI. Empty leaves it uncategorized.
+                type: string
+              comment:
+                description: Free-form comment. The controller prefixes it with an
+                  ownership marker.
+                maxLength: 200
+                type: string
+              deletionPolicy:
+                default: Delete
+                description: DeletionPolicy says what happens to the FortiGate object
+                  when this resource is deleted.
+                enum:
+                - Delete
+                - Orphan
+                type: string
+              name:
+                description: |-
+                  Name of the object on the FortiGate. Defaults to metadata.name.
+                  It cannot be changed after creation.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: name is immutable
+                  rule: self == oldSelf
+              sctpPortrange:
+                items:
+                  type: string
+                type: array
+              tcpPortrange:
+                description: Destination port ranges, each in the FortiOS form dst[-dst][:src[-src]],
+                  such as 1935, 8000-8100 or 53:1024-65535.
+                items:
+                  type: string
+                type: array
+              udpPortrange:
+                items:
+                  type: string
+                type: array
+            type: object
+            x-kubernetes-validations:
+            - message: set at least one of tcpPortrange, udpPortrange or sctpPortrange
+              rule: has(self.tcpPortrange) || has(self.udpPortrange) || has(self.sctpPortrange)
+          status:
+            description: ObjectStatus is the status shared by every kind.
+            properties:
+              conditions:
+                description: Conditions. The Ready condition is true when the FortiGate
+                  object matches the spec.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                description: LastSyncTime is when the FortiGate object was last checked
+                  against the spec.
+                format: date-time
+                type: string
+              name:
+                description: Name of the object on the FortiGate.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the generation that was last applied.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
