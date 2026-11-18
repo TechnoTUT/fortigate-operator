@@ -150,16 +150,20 @@ The Deployment in [config/manager](config/manager/manager.yaml) starts with `DRY
 
 ## Verification status
 
-Checked:
+Checked on the production FortiGate-100D (FortiOS 6.2.16) with a disabled test policy, a test address and a test service:
 
-- Unit tests against an in-memory FortiGate: creation, drift repair, set comparison of reference lists, policy positioning, ownership and adoption, deletion and orphaning, dry run.
-- The CRDs and the RBAC pass server-side validation (dry run) on Kubernetes 1.37.
-- Field names were taken from `show full-configuration firewall policy` on the production FortiGate-100D (FortiOS 6.2.16).
+- Authentication with the `Authorization: Bearer` header is accepted.
+- `POST firewall/policy` creates the policy at the end of the list, and `PUT ...?action=move&before=<id>` moves it above the given policy.
+- A change to the spec writes only the changed field (`tcp-portrange`), and a change made on the FortiGate by hand (`subnet`) is reverted.
+- When a policy, its address and its service are deleted together, deleting the address and the service fails with error -23 (still referenced) until the policy is gone, then succeeds on retry. All three were gone within 10 seconds.
+- Field names and value formats match those in the API responses (`subnet` as `address mask`, reference lists as `[{"name": ...}]`).
 
-Not yet checked against a real FortiGate REST API:
+Also covered by unit tests against an in-memory FortiGate: set comparison of reference lists, ownership and adoption, orphaning and dry run.
 
-- `PUT ...?action=move&before=<id>` and the `mkey` returned by `POST firewall/policy` on 6.2.
+Not yet checked:
+
 - Whether FortiOS changes `logtraffic` on a `deny` policy (this would show up as `NotConverged`).
+- FortiOS 7.x.
 
 ## Development
 
